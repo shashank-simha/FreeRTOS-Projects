@@ -3,45 +3,75 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_system.h"
- 
-xQueueHandle Message_Queue_Handle;
+
+#define MaxQueueSize 3
+#define MaxElementsPerQueue 20
+
+char TxBuffer[5][MaxElementsPerQueue]={"Hello world", "Good Morning", "welcome", "Free Rtos", "Good Bye"};
+char RxBuffer[5][MaxElementsPerQueue];
+
+xTaskHandle SendTaskHandle;
+xTaskHandle ReceiveTaskHandle;
+xQueueHandle MessageQueueHandle;
+
+bool DataSent = false;
+bool DataReceived = false;
 
 void sender_task(void *pvParameter)
 {
- int tx_int = 0;
- while(true)
+ unsigned char tx_int;
+ for(tx_int=0;tx_int<5;tx_int++)
  {
-  printf("Sending %d to the receiver task\n", tx_int);
-  if(! xQueueSend(Message_Queue_Handle, &tx_int, 2000))
+  if(! xQueueSend(MessageQueueHandle, TxBuffer[tx_int], 100))
   {
-   printf("Failed to send to the queue\n");
+   printf("Failed to send the messages\n");
   }
-  tx_int++;
+  else
+  {
+   printf("Successfully sent data\n");
+  }
   vTaskDelay(1000 / portTICK_PERIOD_MS);
  }
+ DataSent = true;
+ vTaskDelete(SendTaskHandle);
 }
 
 void receiver_task(void *pvParameter)
 {
- int rx_int = 0;
- while(true)
+ unsigned char rx_int;
+ for(rx_int=0;rx_int<5;rx_int++)
  {
-  if(xQueueReceive(Message_Queue_Handle, &rx_int, 1000))
+  if(xQueueReceive(MessageQueueHandle, RxBuffer[rx_int], 100))
   {
-   printf("Received %d from the sender task\n", rx_int);
+   printf("Received data is: %s\n", RxBuffer[rx_int]);
   }
   else
   {
-   printf("Failed to receive data from queue\n");
+   printf("No Data received\n");
   }
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
  }
+ DataReceived = true;
+ vTaskDelete(ReceiveTaskHandle);
 }
 
 void app_main()
 {
 	/* Initialize Queue */
-	Message_Queue_Handle = xQueueCreate(3, sizeof(int));	
+	MessageQueueHandle = xQueueCreate(MaxQueueSize, MaxElementsPerQueue);	
+	
     /* create new task */
-    xTaskCreate(&sender_task, "tx_task", 2048, NULL, 1, NULL);
-    xTaskCreate(&receiver_task, "rx_task", 2048, NULL, 1, NULL);
+    xTaskCreate(&sender_task, "tx_task", 2048, NULL, 1, &SendTaskHandle);
+    xTaskCreate(&receiver_task, "rx_task", 2048, NULL, 1, &ReceiveTaskHandle);
+	
+	while(1)
+	{
+	 if(DataSent && DataReceived)
+	 {
+	  printf("Restarting now.\n");
+	  vTaskDelay(1000 / portTICK_PERIOD_MS);
+	  fflush(stdout);
+	  esp_restart();
+	 }
+	}
 }
